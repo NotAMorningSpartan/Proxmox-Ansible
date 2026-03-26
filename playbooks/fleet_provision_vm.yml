@@ -1,0 +1,78 @@
+---
+# fleet_provision_vm.yml — Included task file for fleet.yml
+#
+# Provisions a single VM from a fleet entry, then adds it to the
+# in-memory newvms group. Called in a loop from fleet.yml.
+
+- name: "Provision '{{ vm.name }}'"
+  community.general.proxmox_kvm:
+    api_host: "{{ proxmox_api_host }}"
+    api_user: "{{ proxmox_api_user }}"
+    api_token_id: "{{ proxmox_api_token_id }}"
+    api_token_secret: "{{ proxmox_api_token_secret }}"
+    node: "{{ proxmox_node }}"
+    name: "{{ vm.name }}"
+    vmid: "{{ vm.vm_id | default(omit) }}"
+    clone: "{{ vm.vm_template | default(vm_template | default('rhel9-cloud-template')) }}"
+    full: true
+    storage: "{{ vm.vm_storage | default(vm_storage | default('local-lvm')) }}"
+    timeout: 300
+  no_log: true
+
+- name: "Configure cloud-init for '{{ vm.name }}'"
+  community.general.proxmox_kvm:
+    api_host: "{{ proxmox_api_host }}"
+    api_user: "{{ proxmox_api_user }}"
+    api_token_id: "{{ proxmox_api_token_id }}"
+    api_token_secret: "{{ proxmox_api_token_secret }}"
+    node: "{{ proxmox_node }}"
+    name: "{{ vm.name }}"
+    update: true
+    cores: "{{ vm.vm_cores | default(vm_cores | default(2)) }}"
+    memory: "{{ vm.vm_memory | default(vm_memory | default(4096)) }}"
+    net:
+      net0: "virtio,bridge={{ vm.vm_network_bridge | default(vm_network_bridge | default('vmbr0')) }}{{ ',tag=' + (vm.vm_vlan_tag | default(vm_vlan_tag | default(''))) if (vm.vm_vlan_tag | default(vm_vlan_tag | default(''))) | length > 0 else '' }}"
+    ipconfig:
+      ipconfig0: "ip={{ vm.vm_ip }},gw={{ vm.vm_gateway | default(vm_gateway) }}"
+    nameservers: "{{ vm.vm_dns_servers | default(vm_dns_servers | default([])) | join(' ') }}"
+    searchdomains: "{{ vm.vm_dns_domain | default(vm_dns_domain | default('')) }}"
+    ciuser: "{{ vm.admin_user | default(admin_user | default('sysadmin')) }}"
+    cipassword: "{{ vm.admin_password | default(admin_password) }}"
+    sshkeys: "{{ vm.admin_ssh_pubkey | default(admin_ssh_pubkey | default('')) if (vm.admin_ssh_pubkey | default(admin_ssh_pubkey | default(''))) | length > 0 else omit }}"
+  no_log: true
+
+- name: "Resize disk for '{{ vm.name }}'"
+  community.general.proxmox_disk:
+    api_host: "{{ proxmox_api_host }}"
+    api_user: "{{ proxmox_api_user }}"
+    api_token_id: "{{ proxmox_api_token_id }}"
+    api_token_secret: "{{ proxmox_api_token_secret }}"
+    name: "{{ vm.name }}"
+    disk: scsi0
+    size: "{{ vm.vm_disk_size | default(vm_disk_size | default('40G')) }}"
+    state: resized
+  when: vm.vm_disk_resize | default(vm_disk_resize | default(true)) | bool
+  no_log: true
+
+- name: "Start '{{ vm.name }}'"
+  community.general.proxmox_kvm:
+    api_host: "{{ proxmox_api_host }}"
+    api_user: "{{ proxmox_api_user }}"
+    api_token_id: "{{ proxmox_api_token_id }}"
+    api_token_secret: "{{ proxmox_api_token_secret }}"
+    node: "{{ proxmox_node }}"
+    name: "{{ vm.name }}"
+    state: started
+  no_log: true
+
+- name: "Add '{{ vm.name }}' to newvms group"
+  ansible.builtin.add_host:
+    name: "{{ vm.name }}"
+    groups: newvms
+    ansible_host: "{{ vm.vm_ip | ansible.utils.ipaddr('address') }}"
+    ansible_user: "{{ vm.admin_user | default(admin_user | default('sysadmin')) }}"
+    ansible_become: true
+    # Pass per-VM overrides as host vars so configure phase picks them up
+    idm_enroll: "{{ vm.idm_enroll | default(idm_enroll | default(true)) }}"
+    vm_ip: "{{ vm.vm_ip }}"
+    vm_name: "{{ vm.name }}"

@@ -1,0 +1,49 @@
+---
+# Fleet provisioning — multiple VMs in a single run
+#
+# Define a list of VMs under the "vms" key. Each entry only needs
+# the values that differ from defaults — everything else falls back
+# to role defaults and group_vars.
+#
+# Usage:
+#   ansible-playbook playbooks/fleet.yml \
+#     -e @vars/fleet-example.yml \
+#     -e @vault/secrets.yml \
+#     --ask-vault-pass
+#
+# Or with make:
+#   make fleet FLEET=fleet-example
+
+# --- Shared defaults for this fleet ---
+# These apply to every VM unless overridden per-entry.
+vm_gateway: "192.168.1.1"
+vm_dns_servers:
+  - "192.168.1.10"
+  - "192.168.1.11"
+vm_dns_domain: "example.com"
+vm_template: "rhel9-cloud-template"
+vm_storage: "local-lvm"
+vm_network_bridge: "vmbr0"
+
+# --- VM List ---
+vms:
+  - name: webserver01.example.com
+    vm_ip: "192.168.1.101/24"
+    vm_cores: 4
+    vm_memory: 8192
+    idm_enroll: true
+
+  - name: dbserver01.example.com
+    vm_ip: "192.168.1.102/24"
+    vm_cores: 8
+    vm_memory: 16384
+    vm_disk_size: "100G"
+    idm_enroll: true
+
+  # Add more VMs as needed:
+  # - name: appserver01.example.com
+  #   vm_ip: "192.168.1.103/24"
+  #   vm_cores: 4
+  #   vm_memory: 8192
+  #   vm_disk_size: "60G"
+  #   idm_enroll: false

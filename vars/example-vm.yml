@@ -1,0 +1,86 @@
+---
+# Example per-VM variable file — webserver01.example.com
+#
+# Copy and customize for each VM:
+#   cp vars/example-vm.yml vars/webserver01.yml
+#
+# Run with:
+#   ansible-playbook playbooks/site.yml \
+#     -e @vars/webserver01.yml \
+#     -e @vault/secrets.yml \
+#     --ask-vault-pass
+
+# =====================================================================
+# VM Identity
+# =====================================================================
+vm_name: "webserver01.example.com"     # FQDN hostname
+vm_id: 0                               # 0 = auto-assign next available VMID
+
+# =====================================================================
+# VM Hardware
+# =====================================================================
+vm_template: "rhel9-cloud-template"    # Proxmox template to clone
+vm_cores: 4                            # CPU cores
+vm_memory: 8192                        # RAM in MB
+vm_disk_size: "60G"                    # Root disk size
+vm_storage: "local-lvm"               # Proxmox storage pool
+vm_network_bridge: "vmbr0"            # Network bridge
+vm_vlan_tag: ""                        # VLAN tag (empty = untagged)
+
+# =====================================================================
+# Network (injected via cloud-init)
+# =====================================================================
+vm_ip: "192.168.1.101/24"             # Static IP with CIDR
+vm_gateway: "192.168.1.1"             # Default gateway
+vm_dns_servers:                        # DNS servers (point at IdM for autodiscovery)
+  - "192.168.1.10"
+  - "192.168.1.11"
+vm_dns_domain: "example.com"           # DNS search domain
+
+# =====================================================================
+# User Accounts (injected via cloud-init)
+# =====================================================================
+admin_user: "sysadmin"                 # Admin username
+admin_ssh_pubkey: ""                   # SSH public key (optional, recommended)
+# admin_password and root_password are in vault/secrets.yml
+
+# =====================================================================
+# RHSM — Red Hat Subscription Manager
+# =====================================================================
+# Two authentication modes — pick ONE and set credentials in vault:
+#
+# Mode 1: Username/password
+#   Set rhsm_username and rhsm_password in vault/secrets.yml.
+#   No variables needed here — the vault values are used automatically.
+#
+# Mode 2: Activation key (uncomment below)
+#   Preferred for automated workflows. Does not require username/password.
+rhsm_org_id: "12345678"
+rhsm_activation_key: "rhel9-base-key"
+
+# Repos to enable after registration
+rhsm_repos:
+  - "rhel-9-for-x86_64-baseos-rpms"
+  - "rhel-9-for-x86_64-appstream-rpms"
+
+# Pin to a specific minor version (leave empty for latest)
+# rhsm_release_version: "9.4"
+
+# =====================================================================
+# Base Configuration
+# =====================================================================
+timezone: "America/Denver"
+kdump_enabled: false                   # true to keep kdump enabled
+dnf_update: true                       # Run full system update
+
+# =====================================================================
+# IdM Enrollment
+# =====================================================================
+# DNS servers above should point at the IdM server so ipa-client-install
+# autodiscovers server/domain/realm via DNS SRV records.
+# No need to specify idm_server, idm_realm, or idm_enable_dns_updates.
+idm_enroll: true                       # Set false to skip IdM enrollment
+idm_domain: "example.com"             # Used only for DNS prereq check
+idm_admin_principal: "admin"
+idm_ntp_pool: "pool.ntp.org"
+# idm_admin_password is in vault/secrets.yml

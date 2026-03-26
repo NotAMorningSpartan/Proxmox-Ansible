@@ -1,0 +1,81 @@
+---
+# rhsm_register/tasks/main.yml
+#
+# Register the VM with Red Hat Subscription Manager, enable repos,
+# and optionally pin the RHEL minor release version.
+
+# ---------------------------------------------------------------
+# Validate that at least one credential pair is provided
+# ---------------------------------------------------------------
+- name: Validate RHSM credentials are defined
+  ansible.builtin.assert:
+    that:
+      - >-
+        (rhsm_activation_key is defined and rhsm_activation_key | length > 0
+         and rhsm_org_id is defined and rhsm_org_id | length > 0)
+        or
+        (rhsm_username is defined and rhsm_username | length > 0
+         and rhsm_password is defined and rhsm_password | length > 0)
+    fail_msg: >-
+      RHSM credentials missing. Provide either rhsm_username + rhsm_password
+      or rhsm_org_id + rhsm_activation_key.
+  tags: [rhsm]
+
+# ---------------------------------------------------------------
+# Register with RHSM — Activation Key mode
+# ---------------------------------------------------------------
+- name: Register with RHSM (activation key)
+  community.general.redhat_subscription:
+    org_id: "{{ rhsm_org_id }}"
+    activationkey: "{{ rhsm_activation_key }}"
+    state: present
+    force_register: "{{ rhsm_force_register | bool }}"
+  when:
+    - rhsm_activation_key is defined
+    - rhsm_activation_key | length > 0
+    - rhsm_org_id is defined
+    - rhsm_org_id | length > 0
+  no_log: true
+  tags: [rhsm]
+
+# ---------------------------------------------------------------
+# Register with RHSM — Username/password mode
+# ---------------------------------------------------------------
+- name: Register with RHSM (username/password)
+  community.general.redhat_subscription:
+    username: "{{ rhsm_username }}"
+    password: "{{ rhsm_password }}"
+    state: present
+    force_register: "{{ rhsm_force_register | bool }}"
+  when:
+    - rhsm_activation_key is not defined or rhsm_activation_key | length == 0
+    - rhsm_username is defined
+    - rhsm_username | length > 0
+  no_log: true
+  tags: [rhsm]
+
+# ---------------------------------------------------------------
+# Pin RHEL minor release version (optional)
+# ---------------------------------------------------------------
+- name: Pin RHEL release to {{ rhsm_release_version }}
+  ansible.builtin.command:
+    cmd: subscription-manager release --set={{ rhsm_release_version }}
+  when: rhsm_release_version | default('') | length > 0
+  changed_when: true
+  tags: [rhsm]
+
+# ---------------------------------------------------------------
+# Enable required repositories
+# ---------------------------------------------------------------
+- name: Disable all repos before enabling the required set
+  community.general.rhsm_repository:
+    name: "*"
+    state: disabled
+  tags: [rhsm]
+
+- name: Enable required RHSM repositories
+  community.general.rhsm_repository:
+    name: "{{ rhsm_repos }}"
+    state: enabled
+  notify: Clean dnf cache
+  tags: [rhsm]

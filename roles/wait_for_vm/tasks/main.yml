@@ -1,0 +1,25 @@
+---
+# wait_for_vm/tasks/main.yml
+#
+# Wait for a newly provisioned VM to become reachable over SSH,
+# then pause briefly for cloud-init to complete.
+
+- name: Extract IP address from CIDR notation
+  ansible.builtin.set_fact:
+    _vm_ip_address: "{{ vm_ip | ansible.utils.ipaddr('address') }}"
+  tags: [wait]
+
+- name: "Wait for SSH on {{ _vm_ip_address }} (timeout: {{ wait_for_timeout | default(300) }}s)"
+  ansible.builtin.wait_for:
+    host: "{{ _vm_ip_address }}"
+    port: 22
+    delay: 10
+    timeout: "{{ wait_for_timeout | default(300) }}"
+    state: started
+  delegate_to: localhost
+  tags: [wait]
+
+- name: "Pause {{ wait_for_post_delay | default(15) }}s for cloud-init to finish"
+  ansible.builtin.pause:
+    seconds: "{{ wait_for_post_delay | default(15) }}"
+  tags: [wait]

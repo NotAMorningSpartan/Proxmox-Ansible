@@ -1,0 +1,22 @@
+---
+# Global defaults shared across all groups
+#
+# These apply to every host unless overridden in a more specific
+# group_vars file, host_vars, or extra-vars at runtime.
+
+# --- Timezone ---
+timezone: "America/Denver"
+
+# --- DNS ---
+vm_dns_domain: "example.com"
+vm_dns_servers:
+  - "192.168.1.10"
+  - "192.168.1.11"
+
+# --- VM Defaults ---
+vm_template: "rhel9-cloud-template"
+vm_storage: "local-lvm"
+vm_network_bridge: "vmbr0"
+
+# --- User Account ---
+admin_user: "sysadmin"

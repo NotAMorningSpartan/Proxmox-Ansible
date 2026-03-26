@@ -1,0 +1,102 @@
+---
+# teardown.yml — Destroy a VM and clean up registrations
+#
+# Stops and destroys a VM on Proxmox, optionally unregistering from
+# RHSM and removing the host from IdM first.
+#
+# REQUIRES confirm_destroy=true as a safety check.
+#
+# Usage:
+#   ansible-playbook playbooks/teardown.yml \
+#     -e @vars/webserver01.yml \
+#     -e @vault/secrets.yml \
+#     -e confirm_destroy=true \
+#     --ask-vault-pass
+#
+# Optional flags:
+#   -e teardown_unregister_rhsm=true   (default: true)
+#   -e teardown_remove_idm=true        (default: true)
+
+# -----------------------------------------------------------------
+# Play 1: Clean up registrations on the VM (before destroying it)
+# -----------------------------------------------------------------
+- name: "Teardown — Clean up VM registrations"
+  hosts: newvms
+  become: true
+  gather_facts: false
+  tags: [teardown]
+
+  vars:
+    teardown_unregister_rhsm: true
+    teardown_remove_idm: true
+
+  tasks:
+    - name: Safety check — confirm_destroy must be true
+      ansible.builtin.assert:
+        that: confirm_destroy | default(false) | bool
+        fail_msg: >-
+          Refusing to tear down VM. Set -e confirm_destroy=true to proceed.
+
+    # --- RHSM ---
+    - name: Unregister from RHSM
+      community.general.redhat_subscription:
+        state: absent
+      when: teardown_unregister_rhsm | bool
+      ignore_errors: true
+      no_log: true
+
+    # --- IdM ---
+    - name: Unenroll from IdM
+      ansible.builtin.command:
+        cmd: ipa-client-install --uninstall --unattended
+      when:
+        - teardown_remove_idm | bool
+        - idm_enroll | default(true) | bool
+      ignore_errors: true
+
+# -----------------------------------------------------------------
+# Play 2: Stop and destroy the VM on Proxmox
+# -----------------------------------------------------------------
+- name: "Teardown — Destroy VM on Proxmox"
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tags: [teardown]
+
+  tasks:
+    - name: Safety check — confirm_destroy must be true
+      ansible.builtin.assert:
+        that: confirm_destroy | default(false) | bool
+        fail_msg: >-
+          Refusing to tear down VM. Set -e confirm_destroy=true to proceed.
+
+    - name: "Stop VM '{{ vm_name }}'"
+      community.general.proxmox_kvm:
+        api_host: "{{ proxmox_api_host }}"
+        api_user: "{{ proxmox_api_user }}"
+        api_token_id: "{{ proxmox_api_token_id }}"
+        api_token_secret: "{{ proxmox_api_token_secret }}"
+        node: "{{ proxmox_node }}"
+        name: "{{ vm_name }}"
+        state: stopped
+        force: true
+        timeout: 120
+      ignore_errors: true
+      no_log: true
+
+    - name: "Destroy VM '{{ vm_name }}'"
+      community.general.proxmox_kvm:
+        api_host: "{{ proxmox_api_host }}"
+        api_user: "{{ proxmox_api_user }}"
+        api_token_id: "{{ proxmox_api_token_id }}"
+        api_token_secret: "{{ proxmox_api_token_secret }}"
+        node: "{{ proxmox_node }}"
+        name: "{{ vm_name }}"
+        state: absent
+        timeout: 120
+      no_log: true
+
+    - name: "VM '{{ vm_name }}' has been destroyed"
+      ansible.builtin.debug:
+        msg: >-
+          VM {{ vm_name }} has been stopped and removed from Proxmox node {{ proxmox_node }}.

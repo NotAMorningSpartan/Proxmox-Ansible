@@ -1,0 +1,65 @@
+---
+# base_config/tasks/main.yml
+#
+# Core OS configuration: timezone, kdump, packages.
+
+# ===============================================================
+# 1. TIMEZONE
+# ===============================================================
+- name: Set system timezone to {{ timezone }}
+  community.general.timezone:
+    name: "{{ timezone }}"
+  tags: [timezone]
+
+# ===============================================================
+# 2. KDUMP
+# ===============================================================
+- name: Stop and disable kdump service
+  ansible.builtin.systemd:
+    name: kdump
+    state: stopped
+    enabled: false
+  when: not (kdump_enabled | bool)
+  tags: [kdump]
+
+- name: Remove crashkernel parameter from GRUB cmdline
+  ansible.builtin.command:
+    cmd: grubby --update-kernel=ALL --remove-args="crashkernel"
+  register: _grubby_result
+  changed_when: _grubby_result.rc == 0
+  failed_when: _grubby_result.rc not in [0, 1]
+  when: not (kdump_enabled | bool)
+  tags: [kdump]
+
+# ===============================================================
+# 3. PACKAGES
+# ===============================================================
+- name: Install base package group '{{ base_package_group }}'
+  ansible.builtin.dnf:
+    name: "{{ base_package_group }}"
+    state: present
+  tags: [packages]
+
+- name: Install extra packages
+  ansible.builtin.dnf:
+    name: "{{ extra_packages }}"
+    state: present
+  when: extra_packages | length > 0
+  tags: [packages]
+
+- name: Run full system update
+  ansible.builtin.dnf:
+    name: "*"
+    state: latest
+  when: dnf_update | bool
+  tags: [packages]
+
+# ===============================================================
+# 4. PLOCATE DATABASE
+# ===============================================================
+- name: Update plocate database
+  ansible.builtin.command:
+    cmd: updatedb
+  changed_when: true
+  when: "'plocate' in extra_packages"
+  tags: [packages]

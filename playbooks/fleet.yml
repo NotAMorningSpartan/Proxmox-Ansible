@@ -1,0 +1,79 @@
+---
+# fleet.yml — Provision and configure multiple VMs
+#
+# Reads a "vms" list from a vars file and provisions each VM serially
+# (Proxmox API safety), then configures all VMs in parallel.
+#
+# Usage:
+#   ansible-playbook playbooks/fleet.yml \
+#     -e @vars/fleet-example.yml \
+#     -e @vault/secrets.yml \
+#     --ask-vault-pass
+
+# =================================================================
+# Phase 1: Provision each VM serially
+# =================================================================
+- name: "Fleet — Provision VMs on Proxmox"
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  serial: 1
+  tags: [provision]
+
+  tasks:
+    - name: Validate vms list is defined
+      ansible.builtin.assert:
+        that:
+          - vms is defined
+          - vms | length > 0
+        fail_msg: "The 'vms' list is not defined or is empty. Provide a fleet vars file with -e @vars/fleet.yml"
+
+    - name: "Provision and register each VM"
+      ansible.builtin.include_tasks: fleet_provision_vm.yml
+      loop: "{{ vms }}"
+      loop_control:
+        loop_var: vm
+        label: "{{ vm.name }}"
+
+# =================================================================
+# Phase 2: Wait for all VMs to become reachable
+# =================================================================
+- name: "Fleet — Wait for all VMs"
+  hosts: newvms
+  gather_facts: false
+  serial: "100%"
+  tags: [provision]
+
+  tasks:
+    - name: "Wait for SSH on {{ inventory_hostname }}"
+      ansible.builtin.wait_for:
+        host: "{{ ansible_host }}"
+        port: 22
+        delay: 10
+        timeout: "{{ wait_for_timeout | default(300) }}"
+        state: started
+      delegate_to: localhost
+
+    - name: "Pause for cloud-init to finish"
+      ansible.builtin.pause:
+        seconds: "{{ wait_for_post_delay | default(15) }}"
+
+# =================================================================
+# Phase 3: Configure all VMs in parallel
+# =================================================================
+- name: "Fleet — Day-1 configuration"
+  hosts: newvms
+  become: true
+  gather_facts: true
+  tags: [configure]
+
+  roles:
+    - role: rhsm_register
+      tags: [rhsm]
+
+    - role: base_config
+      tags: [base]
+
+    - role: idm_enroll
+      tags: [idm]
+      when: idm_enroll | default(true) | bool

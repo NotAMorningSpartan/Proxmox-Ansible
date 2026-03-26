@@ -1,0 +1,45 @@
+---
+# Default variables for the proxmox_provision role
+#
+# These can be overridden via inventory, extra-vars, or per-VM variable files.
+
+# --- Proxmox Connection ---
+# These are typically set in inventory/group_vars/proxmox.yml and vault/secrets.yml
+# proxmox_api_host: ""
+# proxmox_api_user: ""
+# proxmox_api_token_id: ""
+# proxmox_api_token_secret: ""
+# proxmox_node: ""
+
+# --- VM Specifications ---
+# vm_name: ""                         # VM hostname (required, no default)
+vm_id: 0                              # Proxmox VMID; 0 = next available
+vm_template: "rhel9-cloud-template"   # Template name to clone from
+vm_cores: 2                           # Number of CPU cores
+vm_memory: 4096                       # RAM in MB
+vm_disk_size: "40G"                   # Root disk size (e.g. "40G", "100G")
+vm_disk_resize: true                  # Whether to resize disk after clone
+vm_storage: "local-lvm"              # Proxmox storage pool for VM disks
+vm_network_bridge: "vmbr0"           # Network bridge
+vm_vlan_tag: ""                      # VLAN tag (leave empty for untagged)
+vm_start_on_create: true             # Start VM after provisioning
+
+# --- Network (Cloud-Init) ---
+# vm_ip: ""                          # Static IP with CIDR, e.g. "192.168.1.100/24" (required)
+# vm_gateway: ""                     # Default gateway (required)
+# vm_dns_servers: []                 # DNS servers list
+# vm_dns_domain: ""                  # DNS search domain
+
+# --- User Accounts (Cloud-Init) ---
+admin_user: "sysadmin"               # Admin username created by cloud-init
+# admin_password: ""                 # Admin password (set in vault)
+# root_password: ""                  # Root password (set in vault)
+admin_ssh_pubkey: ""                 # SSH public key for the admin user (optional)
+
+# --- Cloud-Init Snippet Configuration ---
+# When true, uploads a full cloud-config user-data snippet via cicustom.
+# Requires Proxmox storage with "snippets" content type enabled.
+# When false, uses only Proxmox built-in cloud-init params (ciuser, cipassword, sshkeys).
+ci_use_custom_userdata: false
+# Proxmox storage for snippets (must have "snippets" content type enabled)
+ci_snippet_storage: "local"

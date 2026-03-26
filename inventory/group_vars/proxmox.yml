@@ -1,0 +1,11 @@
+---
+# Proxmox VE connection variables
+#
+# Used by the proxmox_provision role to interact with the Proxmox API.
+# The API token secret is stored in vault/secrets.yml.
+
+proxmox_api_host: "pve01.example.com"
+proxmox_api_user: "root@pam"
+proxmox_api_token_id: "ansible"
+proxmox_api_token_secret: "{{ vault_proxmox_api_token_secret }}"
+proxmox_node: "pve01"
