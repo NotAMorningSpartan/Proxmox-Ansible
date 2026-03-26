@@ -1,0 +1,35 @@
+---
+# Default variables for the rhsm_register role
+#
+# Red Hat Subscription Manager registration and repo management.
+#
+# Two authentication modes are supported. Define ONE pair:
+#   Mode 1 — Username/password: rhsm_username + rhsm_password
+#   Mode 2 — Activation key:    rhsm_org_id   + rhsm_activation_key
+#
+# If activation key variables are set they take precedence over username/password.
+
+# --- Authentication Mode 1: Username/Password ---
+# Set these in vault/secrets.yml
+# rhsm_username: ""
+# rhsm_password: ""
+
+# --- Authentication Mode 2: Activation Key ---
+# rhsm_org_id: ""
+# rhsm_activation_key: ""
+
+# --- Repository Management ---
+# List of repos to enable after registration.
+# Add entries here or override per-VM to include extras (e.g. codeready-builder).
+rhsm_repos:
+  - "rhel-9-for-x86_64-baseos-rpms"
+  - "rhel-9-for-x86_64-appstream-rpms"
+
+# --- Release Pinning ---
+# Pin subscription-manager to a specific RHEL minor version (e.g. "9.2").
+# Leave empty to track the latest minor release.
+rhsm_release_version: ""
+
+# --- Behaviour Flags ---
+# Force re-registration even if the system is already registered
+rhsm_force_register: false

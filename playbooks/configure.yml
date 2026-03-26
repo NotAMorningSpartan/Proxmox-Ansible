@@ -1,0 +1,27 @@
+---
+# configure.yml — Phase 2: Day-1 Configuration
+#
+# Runs against newly provisioned VMs (newvms group) over SSH.
+# Handles RHSM registration, base OS config, and IdM enrollment.
+#
+# Usage (standalone against an existing VM):
+#   ansible-playbook playbooks/configure.yml \
+#     -i "192.168.1.100," \
+#     -e @vars/webserver01.yml \
+#     -e @vault/secrets.yml \
+#     --ask-vault-pass
+
+- name: "Phase 2: Day-1 configuration"
+  hosts: newvms
+  become: true
+  gather_facts: true
+  roles:
+    - role: rhsm_register
+      tags: [rhsm]
+
+    - role: base_config
+      tags: [base]
+
+    - role: idm_enroll
+      tags: [idm]
+      when: idm_enroll | default(true) | bool

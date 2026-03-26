@@ -1,0 +1,34 @@
+---
+# provision.yml — Phase 1: VM Provisioning
+#
+# Runs on localhost to interact with the Proxmox API.
+# Clones a template, injects cloud-init config, starts the VM,
+# then waits for SSH connectivity.
+#
+# Usage:
+#   ansible-playbook playbooks/provision.yml \
+#     -e @vars/webserver01.yml \
+#     -e @vault/secrets.yml \
+#     --ask-vault-pass
+
+- name: "Phase 1: Provision RHEL VM on Proxmox"
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  roles:
+    - proxmox_provision
+  post_tasks:
+    - name: Add new VM to in-memory inventory group 'newvms'
+      ansible.builtin.add_host:
+        name: "{{ vm_name }}"
+        groups: newvms
+        ansible_host: "{{ vm_ip | ansible.utils.ipaddr('address') }}"
+        ansible_user: "{{ admin_user | default('sysadmin') }}"
+        ansible_become: true
+      tags: [provision]
+
+- name: "Wait for VM '{{ vm_name }}' to become reachable"
+  hosts: "{{ vm_name }}"
+  gather_facts: false
+  roles:
+    - wait_for_vm

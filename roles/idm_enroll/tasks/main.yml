@@ -1,0 +1,107 @@
+---
+# idm_enroll/tasks/main.yml
+#
+# Enroll the VM into Red Hat Identity Management (FreeIPA).
+#
+# The VM's DNS is pointed at the IdM server during provisioning, so
+# ipa-client-install autodiscovers server/domain/realm via DNS SRV/TXT
+# records. We do NOT pass --server, --domain, or --realm.
+#
+# The entire role is skipped when idm_enroll is false.
+
+# ===============================================================
+# 1. PREREQUISITES
+# ===============================================================
+- name: Verify ipa-client package is installed
+  ansible.builtin.command:
+    cmd: rpm -q ipa-client
+  register: _ipa_client_check
+  changed_when: false
+  failed_when: _ipa_client_check.rc != 0
+  when: idm_enroll | bool
+  tags: [idm]
+
+- name: Verify IdM DNS SRV records are resolvable
+  ansible.builtin.command:
+    cmd: dig +short _ldap._tcp.{{ idm_domain }} SRV
+  register: _dns_srv_check
+  changed_when: false
+  failed_when: _dns_srv_check.stdout | length == 0
+  when: idm_enroll | bool
+  tags: [idm]
+
+- name: Display discovered IdM SRV records
+  ansible.builtin.debug:
+    msg: "IdM SRV records found: {{ _dns_srv_check.stdout_lines }}"
+  when: idm_enroll | bool
+  tags: [idm]
+
+# ===============================================================
+# 2. IPA-CLIENT-INSTALL
+# ===============================================================
+- name: Enroll in IdM via ipa-client-install
+  ansible.builtin.command:
+    cmd: >-
+      ipa-client-install
+      --principal={{ idm_admin_principal }}
+      --password={{ idm_admin_password }}
+      --enable-dns-updates
+      --ntp-pool={{ idm_ntp_pool }}
+      --mkhomedir
+      --unattended
+      --force-join
+    creates: /etc/ipa/default.conf
+  no_log: true
+  when: idm_enroll | bool
+  tags: [idm]
+
+# ===============================================================
+# 3. VERIFY ENROLLMENT
+# ===============================================================
+- name: Verify host keytab with kinit -k
+  ansible.builtin.command:
+    cmd: kinit -k
+  register: _kinit_check
+  changed_when: false
+  ignore_errors: true
+  when: idm_enroll | bool
+  tags: [idm]
+
+- name: Warn if host keytab verification failed
+  ansible.builtin.debug:
+    msg: >-
+      WARNING: kinit -k failed (rc={{ _kinit_check.rc }}).
+      The host keytab may not be configured correctly.
+      Stderr: {{ _kinit_check.stderr | default('') }}
+  when:
+    - idm_enroll | bool
+    - _kinit_check is failed
+  tags: [idm]
+
+# ===============================================================
+# 4. VERIFY CHRONYD
+# ===============================================================
+- name: Verify chronyd is running
+  ansible.builtin.systemd:
+    name: chronyd
+    state: started
+    enabled: true
+  when: idm_enroll | bool
+  tags: [idm]
+
+- name: Check chronyd NTP sources
+  ansible.builtin.command:
+    cmd: chronyc sources
+  register: _chrony_sources
+  changed_when: false
+  ignore_errors: true
+  when: idm_enroll | bool
+  tags: [idm]
+
+- name: Display chronyd sources
+  ansible.builtin.debug:
+    msg: "{{ _chrony_sources.stdout_lines }}"
+  when:
+    - idm_enroll | bool
+    - _chrony_sources is succeeded
+  tags: [idm]

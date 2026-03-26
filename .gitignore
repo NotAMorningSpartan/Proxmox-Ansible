@@ -1,0 +1,9 @@
+# Vault secrets (never commit real credentials)
+vault/secrets.yml
+
+# Ansible retry files
+*.retry
+
+# Python
+__pycache__/
+*.pyc

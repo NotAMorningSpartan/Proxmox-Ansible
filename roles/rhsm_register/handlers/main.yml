@@ -1,0 +1,8 @@
+---
+# Handlers for the rhsm_register role
+
+- name: Clean dnf cache
+  ansible.builtin.command:
+    cmd: dnf clean all
+  changed_when: true
+  tags: [rhsm]

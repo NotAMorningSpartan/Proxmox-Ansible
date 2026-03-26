@@ -1,0 +1,134 @@
+---
+# proxmox_provision/tasks/main.yml
+#
+# Phase 1: Provision a RHEL VM on Proxmox VE
+#
+# Runs on localhost. Clones a template, configures cloud-init,
+# optionally resizes the disk, and starts the VM.
+
+- name: Validate required variables
+  ansible.builtin.assert:
+    that:
+      - vm_name is defined and vm_name | length > 0
+      - vm_ip is defined and vm_ip | length > 0
+      - vm_gateway is defined and vm_gateway | length > 0
+      - proxmox_api_host is defined
+      - proxmox_api_user is defined
+      - proxmox_api_token_id is defined
+      - proxmox_api_token_secret is defined
+      - proxmox_node is defined
+    fail_msg: >-
+      Missing required variables. Ensure vm_name, vm_ip, vm_gateway,
+      and all proxmox_api_* variables are defined.
+  tags: [provision]
+
+# ---------------------------------------------------------------
+# Step 1: Clone VM from template
+# ---------------------------------------------------------------
+- name: Clone VM from template '{{ vm_template }}'
+  community.general.proxmox_kvm:
+    api_host: "{{ proxmox_api_host }}"
+    api_user: "{{ proxmox_api_user }}"
+    api_token_id: "{{ proxmox_api_token_id }}"
+    api_token_secret: "{{ proxmox_api_token_secret }}"
+    node: "{{ proxmox_node }}"
+    name: "{{ vm_name }}"
+    vmid: "{{ vm_id if vm_id | int > 0 else omit }}"
+    clone: "{{ vm_template }}"
+    full: true
+    storage: "{{ vm_storage }}"
+    timeout: 300
+  register: clone_result
+  no_log: true
+  tags: [provision]
+
+# ---------------------------------------------------------------
+# Step 2: Upload cloud-init user-data snippet (if enabled)
+# ---------------------------------------------------------------
+- name: Render cloud-init user-data snippet
+  ansible.builtin.template:
+    src: cloud-init-user-data.yml.j2
+    dest: "/tmp/{{ vm_name }}-cloud-init-userdata.yml"
+    mode: "0600"
+  when: ci_use_custom_userdata | bool
+  delegate_to: localhost
+  no_log: true
+  tags: [provision]
+
+- name: Upload cloud-init snippet to Proxmox storage
+  ansible.builtin.command:
+    cmd: >-
+      scp /tmp/{{ vm_name }}-cloud-init-userdata.yml
+      {{ proxmox_api_host }}:/var/lib/vz/snippets/{{ vm_name }}-userdata.yml
+  when: ci_use_custom_userdata | bool
+  delegate_to: localhost
+  changed_when: true
+  tags: [provision]
+
+- name: Remove local temporary snippet file
+  ansible.builtin.file:
+    path: "/tmp/{{ vm_name }}-cloud-init-userdata.yml"
+    state: absent
+  when: ci_use_custom_userdata | bool
+  delegate_to: localhost
+  tags: [provision]
+
+# ---------------------------------------------------------------
+# Step 3: Configure cloud-init on the VM
+# ---------------------------------------------------------------
+- name: Configure cloud-init settings on VM
+  community.general.proxmox_kvm:
+    api_host: "{{ proxmox_api_host }}"
+    api_user: "{{ proxmox_api_user }}"
+    api_token_id: "{{ proxmox_api_token_id }}"
+    api_token_secret: "{{ proxmox_api_token_secret }}"
+    node: "{{ proxmox_node }}"
+    name: "{{ vm_name }}"
+    update: true
+    cores: "{{ vm_cores }}"
+    memory: "{{ vm_memory }}"
+    net:
+      net0: "virtio,bridge={{ vm_network_bridge }}{{ ',tag=' + vm_vlan_tag if vm_vlan_tag | default('') | length > 0 else '' }}"
+    ipconfig:
+      ipconfig0: "ip={{ vm_ip }},gw={{ vm_gateway }}"
+    nameservers: "{{ vm_dns_servers | default([]) | join(' ') }}"
+    searchdomains: "{{ vm_dns_domain | default('') }}"
+    ciuser: "{{ admin_user }}"
+    cipassword: "{{ admin_password }}"
+    sshkeys: "{{ admin_ssh_pubkey if admin_ssh_pubkey | default('') | length > 0 else omit }}"
+    cicustom: "{{ ('user=' + ci_snippet_storage + ':snippets/' + vm_name + '-userdata.yml') if ci_use_custom_userdata | bool else omit }}"
+  no_log: true
+  tags: [provision]
+
+# ---------------------------------------------------------------
+# Step 4: Resize the root disk (optional)
+# ---------------------------------------------------------------
+- name: Resize root disk to {{ vm_disk_size }}
+  community.general.proxmox_disk:
+    api_host: "{{ proxmox_api_host }}"
+    api_user: "{{ proxmox_api_user }}"
+    api_token_id: "{{ proxmox_api_token_id }}"
+    api_token_secret: "{{ proxmox_api_token_secret }}"
+    name: "{{ vm_name }}"
+    disk: scsi0
+    size: "{{ vm_disk_size }}"
+    state: resized
+  when: vm_disk_resize | default(true) | bool
+  no_log: true
+  tags: [provision]
+
+# ---------------------------------------------------------------
+# Step 5: Start the VM
+# ---------------------------------------------------------------
+- name: Start VM '{{ vm_name }}'
+  community.general.proxmox_kvm:
+    api_host: "{{ proxmox_api_host }}"
+    api_user: "{{ proxmox_api_user }}"
+    api_token_id: "{{ proxmox_api_token_id }}"
+    api_token_secret: "{{ proxmox_api_token_secret }}"
+    node: "{{ proxmox_node }}"
+    name: "{{ vm_name }}"
+    state: started
+  when: vm_start_on_create | bool
+  no_log: true
+  tags: [provision]

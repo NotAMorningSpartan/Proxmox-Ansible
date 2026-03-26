@@ -1,0 +1,260 @@
+---
+# validate.yml — Post-deployment validation
+#
+# Runs against a provisioned VM and checks that all day-1 configuration
+# was applied correctly. Each check uses assert and reports pass/fail.
+#
+# Usage:
+#   ansible-playbook playbooks/validate.yml \
+#     -i "192.168.1.101," \
+#     -e @vars/webserver01.yml \
+#     --tags validate
+
+- name: "Validate VM configuration"
+  hosts: all
+  become: true
+  gather_facts: true
+  tags: [validate]
+
+  vars:
+    # Collect results for the summary
+    _checks: []
+
+  tasks:
+    # =============================================================
+    # 1. RHSM Registration
+    # =============================================================
+    - name: "Check RHSM registration status"
+      ansible.builtin.command:
+        cmd: subscription-manager identity
+      register: _rhsm_identity
+      changed_when: false
+      ignore_errors: true
+
+    - name: "Validate — RHSM is registered"
+      ansible.builtin.assert:
+        that: _rhsm_identity.rc == 0
+        success_msg: "PASS — System is registered with RHSM"
+        fail_msg: "FAIL — System is NOT registered with RHSM"
+      register: _check_rhsm
+      ignore_errors: true
+
+    - name: Record RHSM check
+      ansible.builtin.set_fact:
+        _checks: "{{ _checks + [{'name': 'RHSM registered', 'passed': _check_rhsm is not failed}] }}"
+
+    # =============================================================
+    # 2. Required Repos
+    # =============================================================
+    - name: "Get enabled repos"
+      ansible.builtin.command:
+        cmd: subscription-manager repos --list-enabled
+      register: _enabled_repos
+      changed_when: false
+      ignore_errors: true
+
+    - name: "Validate — required repos are enabled"
+      ansible.builtin.assert:
+        that: item in _enabled_repos.stdout
+        success_msg: "PASS — Repo {{ item }} is enabled"
+        fail_msg: "FAIL — Repo {{ item }} is NOT enabled"
+      loop: "{{ rhsm_repos }}"
+      register: _check_repos
+      ignore_errors: true
+
+    - name: Record repos check
+      ansible.builtin.set_fact:
+        _checks: "{{ _checks + [{'name': 'Required repos enabled', 'passed': _check_repos.results | rejectattr('failed') | list | length == rhsm_repos | length}] }}"
+
+    # =============================================================
+    # 3. kdump
+    # =============================================================
+    - name: "Get kdump service status"
+      ansible.builtin.systemd:
+        name: kdump
+      register: _kdump_status
+      ignore_errors: true
+
+    - name: "Validate — kdump is disabled"
+      ansible.builtin.assert:
+        that:
+          - _kdump_status.status.ActiveState != "active"
+          - _kdump_status.status.UnitFileState == "disabled"
+        success_msg: "PASS — kdump is stopped and disabled"
+        fail_msg: "FAIL — kdump is still active or enabled (Active: {{ _kdump_status.status.ActiveState }}, Enabled: {{ _kdump_status.status.UnitFileState }})"
+      register: _check_kdump
+      ignore_errors: true
+      when: not (kdump_enabled | default(false) | bool)
+
+    - name: Record kdump check
+      ansible.builtin.set_fact:
+        _checks: "{{ _checks + [{'name': 'kdump disabled', 'passed': (_check_kdump is not failed) if not (kdump_enabled | default(false) | bool) else true}] }}"
+
+    # =============================================================
+    # 4. Timezone
+    # =============================================================
+    - name: "Get current timezone"
+      ansible.builtin.command:
+        cmd: timedatectl show --property=Timezone --value
+      register: _current_tz
+      changed_when: false
+
+    - name: "Validate — timezone is {{ timezone }}"
+      ansible.builtin.assert:
+        that: _current_tz.stdout | trim == timezone
+        success_msg: "PASS — Timezone is {{ timezone }}"
+        fail_msg: "FAIL — Timezone is '{{ _current_tz.stdout | trim }}', expected '{{ timezone }}'"
+      register: _check_tz
+      ignore_errors: true
+
+    - name: Record timezone check
+      ansible.builtin.set_fact:
+        _checks: "{{ _checks + [{'name': 'Timezone correct', 'passed': _check_tz is not failed}] }}"
+
+    # =============================================================
+    # 5. Expected Packages
+    # =============================================================
+    - name: "Check if expected packages are installed"
+      ansible.builtin.command:
+        cmd: "rpm -q {{ item }}"
+      loop: "{{ extra_packages }}"
+      register: _pkg_checks
+      changed_when: false
+      ignore_errors: true
+
+    - name: "Validate — all expected packages are installed"
+      ansible.builtin.assert:
+        that: item.rc == 0
+        success_msg: "PASS — Package {{ item.item }} is installed"
+        fail_msg: "FAIL — Package {{ item.item }} is NOT installed"
+      loop: "{{ _pkg_checks.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+      register: _check_pkgs
+      ignore_errors: true
+
+    - name: Record packages check
+      ansible.builtin.set_fact:
+        _checks: "{{ _checks + [{'name': 'All packages installed', 'passed': _check_pkgs.results | rejectattr('failed') | list | length == extra_packages | length}] }}"
+
+    # =============================================================
+    # 6. IdM Enrollment
+    # =============================================================
+    - name: "Check for IdM enrollment file"
+      ansible.builtin.stat:
+        path: /etc/ipa/default.conf
+      register: _idm_conf
+
+    - name: "Validate — system is enrolled in IdM"
+      ansible.builtin.assert:
+        that: _idm_conf.stat.exists
+        success_msg: "PASS — System is enrolled in IdM (/etc/ipa/default.conf exists)"
+        fail_msg: "FAIL — System is NOT enrolled in IdM"
+      register: _check_idm
+      ignore_errors: true
+      when: idm_enroll | default(true) | bool
+
+    - name: Record IdM check
+      ansible.builtin.set_fact:
+        _checks: "{{ _checks + [{'name': 'IdM enrolled', 'passed': (_check_idm is not failed) if (idm_enroll | default(true) | bool) else 'skipped'}] }}"
+
+    # =============================================================
+    # 7. chronyd
+    # =============================================================
+    - name: "Get chronyd service status"
+      ansible.builtin.systemd:
+        name: chronyd
+      register: _chronyd_status
+      ignore_errors: true
+
+    - name: "Check chronyd synchronization"
+      ansible.builtin.command:
+        cmd: chronyc tracking
+      register: _chrony_tracking
+      changed_when: false
+      ignore_errors: true
+
+    - name: "Validate — chronyd is running and synchronized"
+      ansible.builtin.assert:
+        that:
+          - _chronyd_status.status.ActiveState == "active"
+          - "'Leap status     : Normal' in _chrony_tracking.stdout or 'Not synchronised' not in _chrony_tracking.stdout"
+        success_msg: "PASS — chronyd is running and synchronized"
+        fail_msg: "FAIL — chronyd is not running or not synchronized"
+      register: _check_chrony
+      ignore_errors: true
+
+    - name: Record chronyd check
+      ansible.builtin.set_fact:
+        _checks: "{{ _checks + [{'name': 'chronyd running', 'passed': _check_chrony is not failed}] }}"
+
+    # =============================================================
+    # 8. Sudo Access
+    # =============================================================
+    - name: "Check admin user can sudo"
+      ansible.builtin.command:
+        cmd: "sudo -n -u root whoami"
+      become: false
+      become_user: "{{ admin_user | default('sysadmin') }}"
+      register: _sudo_check
+      changed_when: false
+      ignore_errors: true
+
+    - name: "Validate — admin user has sudo access"
+      ansible.builtin.assert:
+        that: _sudo_check.stdout | trim == "root"
+        success_msg: "PASS — User '{{ admin_user | default('sysadmin') }}' has sudo access"
+        fail_msg: "FAIL — User '{{ admin_user | default('sysadmin') }}' cannot sudo"
+      register: _check_sudo
+      ignore_errors: true
+
+    - name: Record sudo check
+      ansible.builtin.set_fact:
+        _checks: "{{ _checks + [{'name': 'Admin sudo access', 'passed': _check_sudo is not failed}] }}"
+
+    # =============================================================
+    # 9. Static IP
+    # =============================================================
+    - name: "Validate — static IP is configured"
+      ansible.builtin.assert:
+        that: "vm_ip | ansible.utils.ipaddr('address') in ansible_all_ipv4_addresses"
+        success_msg: "PASS — IP {{ vm_ip | ansible.utils.ipaddr('address') }} is configured"
+        fail_msg: "FAIL — IP {{ vm_ip | ansible.utils.ipaddr('address') }} not found in {{ ansible_all_ipv4_addresses }}"
+      register: _check_ip
+      ignore_errors: true
+      when: vm_ip is defined
+
+    - name: Record IP check
+      ansible.builtin.set_fact:
+        _checks: "{{ _checks + [{'name': 'Static IP correct', 'passed': (_check_ip is not failed) if vm_ip is defined else 'skipped'}] }}"
+
+    # =============================================================
+    # SUMMARY
+    # =============================================================
+    - name: "Validation Summary"
+      ansible.builtin.debug:
+        msg: |
+          ======================================
+           VALIDATION SUMMARY — {{ vm_name | default(inventory_hostname) }}
+          ======================================
+          {% for c in _checks %}
+          {% if c.passed == 'skipped' %}
+            [ SKIP ] {{ c.name }}
+          {% elif c.passed %}
+            [ PASS ] {{ c.name }}
+          {% else %}
+            [ FAIL ] {{ c.name }}
+          {% endif %}
+          {% endfor %}
+          ======================================
+          {% set passed = _checks | selectattr('passed', 'equalto', true) | list | length %}
+          {% set failed = _checks | selectattr('passed', 'equalto', false) | list | length %}
+          {% set skipped = _checks | selectattr('passed', 'equalto', 'skipped') | list | length %}
+           Total: {{ _checks | length }} | Passed: {{ passed }} | Failed: {{ failed }} | Skipped: {{ skipped }}
+          ======================================
+
+    - name: "Fail playbook if any checks failed"
+      ansible.builtin.assert:
+        that: (_checks | selectattr('passed', 'equalto', false) | list | length) == 0
+        fail_msg: "One or more validation checks failed. Review the summary above."
+        success_msg: "All validation checks passed."

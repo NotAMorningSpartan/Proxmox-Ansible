@@ -1,0 +1,30 @@
+---
+# Default variables for the idm_enroll role
+#
+# Red Hat Identity Management (FreeIPA) client enrollment.
+#
+# DESIGN NOTE: The VM's DNS servers are pointed at the IdM server during
+# Phase 1 provisioning (cloud-init). This means ipa-client-install can
+# autodiscover the IdM server, domain, and Kerberos realm via DNS SRV/TXT
+# records. Because of this, --server, --domain, and --realm flags are NOT
+# passed to ipa-client-install — DNS discovery handles all of it.
+# The --enable-dns-updates flag is always passed so the VM registers its
+# A/PTR records in IdM DNS.
+
+# Master toggle — set to false to skip IdM enrollment entirely
+idm_enroll: true
+
+# IdM domain — used ONLY for the DNS prerequisite check (SRV record lookup)
+# to verify the VM's DNS is correctly pointed at IdM before attempting
+# enrollment. This is NOT passed to ipa-client-install.
+idm_domain: "example.com"
+
+# Kerberos principal used for enrollment
+idm_admin_principal: "admin"
+
+# Enrollment password (set in vault/secrets.yml)
+# idm_admin_password: ""
+
+# NTP pool passed to ipa-client-install via --ntp-pool
+# The installer configures chronyd with this pool at enrollment time.
+idm_ntp_pool: "pool.ntp.org"

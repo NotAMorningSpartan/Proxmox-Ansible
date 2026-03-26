@@ -1,0 +1,9 @@
+---
+# Connection defaults for newly provisioned VMs
+#
+# Applied automatically to any host added to the [newvms] group
+# via add_host during provisioning.
+
+ansible_user: "{{ admin_user | default('sysadmin') }}"
+ansible_become: true
+ansible_python_interpreter: auto

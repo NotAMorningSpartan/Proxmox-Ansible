@@ -1,0 +1,17 @@
+---
+# site.yml — Master playbook
+#
+# Runs the full pipeline: provision a VM on Proxmox, then perform
+# day-1 configuration over SSH.
+#
+# Usage:
+#   ansible-playbook playbooks/site.yml \
+#     -e @vars/webserver01.yml \
+#     -e @vault/secrets.yml \
+#     --ask-vault-pass
+
+- name: "Phase 1: Provision RHEL VM on Proxmox"
+  ansible.builtin.import_playbook: provision.yml
+
+- name: "Phase 2: Day-1 configuration"
+  ansible.builtin.import_playbook: configure.yml

@@ -1,0 +1,27 @@
+---
+# Default variables for the base_config role
+#
+# Core OS configuration applied to all new RHEL VMs.
+
+# --- Timezone ---
+# IANA timezone string (e.g. "America/Denver", "UTC", "Europe/London")
+timezone: "America/Denver"
+
+# --- kdump ---
+# Set to true to keep kdump enabled; false stops/disables the service
+# and removes the crashkernel reservation from the GRUB command line.
+kdump_enabled: false
+
+# --- Packages ---
+# DNF package group to install (use "@groupname" syntax)
+base_package_group: "@server"
+
+# Additional individual packages to install
+extra_packages:
+  - vim
+  - plocate
+  - ipa-client
+  - wget
+
+# Run a full "dnf update" after package installation
+dnf_update: true
