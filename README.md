@@ -27,9 +27,24 @@ Cloud-init handles items that must exist at first boot (static IP, hostname, use
 
 ### Install Dependencies
 
+Using a Python virtual environment is recommended to avoid conflicts with system packages:
+
+```bash
+python3 -m venv ~/ansible-venv
+source ~/ansible-venv/bin/activate
+pip install ansible proxmoxer requests
+```
+
+Add the activation to your shell profile so it's always available:
+
+```bash
+echo 'source ~/ansible-venv/bin/activate' >> ~/.bashrc
+```
+
+Then install the required Ansible collection:
+
 ```bash
 ansible-galaxy collection install community.general
-pip install proxmoxer requests
 ```
 
 ## Quick Start
