@@ -46,23 +46,21 @@
 # Step 1b: Look up the VMID assigned to the new VM
 # ---------------------------------------------------------------
 - name: Look up VMID for '{{ vm_name }}'
-  ansible.builtin.shell: >-
-    pvesh get /cluster/resources --type vm --output-format json
-    | python3 -c "import sys,json;
-    vms = json.load(sys.stdin);
-    matches = [v for v in vms if v.get('name') == '{{ vm_name }}'];
-    print(matches[0]['vmid'] if matches else '')"
-  args:
-    executable: /bin/bash
-  delegate_to: "{{ proxmox_api_host }}"
-  register: vmid_lookup
-  changed_when: false
-  failed_when: vmid_lookup.stdout | length == 0
+  ansible.builtin.uri:
+    url: "https://{{ proxmox_api_host }}:8006/api2/json/cluster/resources?type=vm"
+    method: GET
+    headers:
+      Authorization: "PVEAPIToken={{ proxmox_api_user }}!{{ proxmox_api_token_id }}={{ proxmox_api_token_secret }}"
+    validate_certs: false
+  register: vmid_lookup_result
+  no_log: true
   tags: [provision]
 
 - name: Set resolved VMID fact
   ansible.builtin.set_fact:
-    resolved_vmid: "{{ vm_id if vm_id | int > 0 else vmid_lookup.stdout }}"
+    resolved_vmid: >-
+      {{ vm_id if vm_id | int > 0 else
+         (vmid_lookup_result.json.data | selectattr('name', 'equalto', vm_name) | map(attribute='vmid') | first) }}
   tags: [provision]
 
 # ---------------------------------------------------------------
