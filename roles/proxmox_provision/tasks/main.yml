@@ -69,7 +69,7 @@
       {{ vm_id if vm_id | int > 0 else
          (_matched | first).vmid if _matched | length > 0 else
          (clone_result.vmid | default('')) }}
-  failed_when: resolved_vmid | default('') | length == 0
+  failed_when: resolved_vmid | default('') | string | length == 0
   tags: [provision]
 
 # ---------------------------------------------------------------
