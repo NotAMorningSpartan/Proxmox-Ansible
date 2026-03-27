@@ -223,7 +223,7 @@ Set per-VM in `vars/<vmname>.yml`.
 |----------|-------------|---------|
 | `vm_name` | VM FQDN hostname | (required) |
 | `vm_id` | Proxmox VMID (0 = auto) | `0` |
-| `vm_template` | Template to clone | `rhel9-cloud-template` |
+| `vm_template` | Template to clone | `rhel10-cloudinit-template` |
 | `vm_cores` | CPU cores | `2` |
 | `vm_memory` | RAM in MB | `4096` |
 | `vm_disk_size` | Root disk size | `40G` |

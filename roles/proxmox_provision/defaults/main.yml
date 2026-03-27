@@ -14,7 +14,7 @@
 # --- VM Specifications ---
 # vm_name: ""                         # VM hostname (required, no default)
 vm_id: 0                              # Proxmox VMID; 0 = next available
-vm_template: "rhel9-cloud-template"   # Template name to clone from
+vm_template: "rhel10-cloudinit-template"  # Template name to clone from
 vm_cores: 2                           # Number of CPU cores
 vm_memory: 4096                       # RAM in MB
 vm_disk_size: "40G"                   # Root disk size (e.g. "40G", "100G")
