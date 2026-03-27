@@ -13,7 +13,7 @@
     node: "{{ proxmox_node }}"
     name: "{{ vm.name }}"
     vmid: "{{ vm.vm_id | default(omit) }}"
-    clone: "{{ vm.vm_template | default(vm_template | default('rhel9-cloud-template')) }}"
+    clone: "{{ vm.vm_template | default(vm_template | default('rhel10-cloudinit-template')) }}"
     full: true
     storage: "{{ vm.vm_storage | default(vm_storage | default('local-lvm')) }}"
     timeout: 300

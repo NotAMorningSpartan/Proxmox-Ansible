@@ -22,8 +22,8 @@
 # List of repos to enable after registration.
 # Add entries here or override per-VM to include extras (e.g. codeready-builder).
 rhsm_repos:
-  - "rhel-9-for-x86_64-baseos-rpms"
-  - "rhel-9-for-x86_64-appstream-rpms"
+  - "rhel-10-for-x86_64-baseos-rpms"
+  - "rhel-10-for-x86_64-appstream-rpms"
 
 # --- Release Pinning ---
 # Pin subscription-manager to a specific RHEL minor version (e.g. "9.2").

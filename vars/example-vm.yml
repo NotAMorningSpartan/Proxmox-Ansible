@@ -19,7 +19,7 @@ vm_id: 0                               # 0 = auto-assign next available VMID
 # =====================================================================
 # VM Hardware
 # =====================================================================
-vm_template: "rhel9-cloud-template"    # Proxmox template to clone
+vm_template: "rhel10-cloudinit-template"  # Proxmox template to clone
 vm_cores: 4                            # CPU cores
 vm_memory: 8192                        # RAM in MB
 vm_disk_size: "60G"                    # Root disk size
@@ -56,15 +56,15 @@ admin_ssh_pubkey: ""                   # SSH public key (optional, recommended)
 # Mode 2: Activation key (uncomment below)
 #   Preferred for automated workflows. Does not require username/password.
 rhsm_org_id: "12345678"
-rhsm_activation_key: "rhel9-base-key"
+rhsm_activation_key: "rhel10-base-key"
 
 # Repos to enable after registration
 rhsm_repos:
-  - "rhel-9-for-x86_64-baseos-rpms"
-  - "rhel-9-for-x86_64-appstream-rpms"
+  - "rhel-10-for-x86_64-baseos-rpms"
+  - "rhel-10-for-x86_64-appstream-rpms"
 
 # Pin to a specific minor version (leave empty for latest)
-# rhsm_release_version: "9.4"
+# rhsm_release_version: "10.1"
 
 # =====================================================================
 # Base Configuration
