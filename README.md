@@ -32,7 +32,7 @@ Using a Python virtual environment is recommended to avoid conflicts with system
 ```bash
 python3 -m venv ~/ansible-venv
 source ~/ansible-venv/bin/activate
-pip install ansible proxmoxer requests
+pip install ansible proxmoxer requests netaddr
 ```
 
 Add the activation to your shell profile so it's always available:
@@ -44,7 +44,7 @@ echo 'source ~/ansible-venv/bin/activate' >> ~/.bashrc
 Then install the required Ansible collection:
 
 ```bash
-ansible-galaxy collection install community.general
+ansible-galaxy collection install community.general ansible.utils
 ```
 
 ## Quick Start
