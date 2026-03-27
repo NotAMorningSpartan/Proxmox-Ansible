@@ -43,6 +43,28 @@
   tags: [provision]
 
 # ---------------------------------------------------------------
+# Step 1b: Look up the VMID assigned to the new VM
+# ---------------------------------------------------------------
+- name: Look up VMID for '{{ vm_name }}'
+  ansible.builtin.shell: >-
+    set -o pipefail &&
+    pvesh get /cluster/resources --type vm --output-format json
+    | python3 -c "import sys,json;
+    vms = json.load(sys.stdin);
+    matches = [v for v in vms if v.get('name') == '{{ vm_name }}'];
+    print(matches[0]['vmid'] if matches else '')"
+  delegate_to: "{{ proxmox_api_host }}"
+  register: vmid_lookup
+  changed_when: false
+  failed_when: vmid_lookup.stdout | length == 0
+  tags: [provision]
+
+- name: Set resolved VMID fact
+  ansible.builtin.set_fact:
+    resolved_vmid: "{{ vm_id if vm_id | int > 0 else vmid_lookup.stdout }}"
+  tags: [provision]
+
+# ---------------------------------------------------------------
 # Step 2: Upload cloud-init user-data snippet (if enabled)
 # ---------------------------------------------------------------
 - name: Render cloud-init user-data snippet
@@ -83,6 +105,7 @@
     api_token_id: "{{ proxmox_api_token_id }}"
     api_token_secret: "{{ proxmox_api_token_secret }}"
     node: "{{ proxmox_node }}"
+    vmid: "{{ resolved_vmid }}"
     name: "{{ vm_name }}"
     update: true
     cores: "{{ vm_cores }}"
@@ -109,6 +132,7 @@
     api_user: "{{ proxmox_api_user }}"
     api_token_id: "{{ proxmox_api_token_id }}"
     api_token_secret: "{{ proxmox_api_token_secret }}"
+    vmid: "{{ resolved_vmid }}"
     name: "{{ vm_name }}"
     disk: scsi0
     size: "{{ vm_disk_size }}"
@@ -127,6 +151,7 @@
     api_token_id: "{{ proxmox_api_token_id }}"
     api_token_secret: "{{ proxmox_api_token_secret }}"
     node: "{{ proxmox_node }}"
+    vmid: "{{ resolved_vmid }}"
     name: "{{ vm_name }}"
     state: started
   when: vm_start_on_create | bool
