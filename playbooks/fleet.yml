@@ -18,6 +18,8 @@
   connection: local
   gather_facts: false
   serial: 1
+  vars_files:
+    - ../inventory/group_vars/proxmox.yml
   tags: [provision]
 
   tasks:

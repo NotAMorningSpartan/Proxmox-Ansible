@@ -61,6 +61,8 @@
   hosts: localhost
   connection: local
   gather_facts: false
+  vars_files:
+    - ../inventory/group_vars/proxmox.yml
   tags: [teardown]
 
   tasks:
