@@ -56,11 +56,20 @@
   no_log: true
   tags: [provision]
 
+- name: Show VM names from Proxmox (debug)
+  ansible.builtin.debug:
+    msg: "VMs found: {{ vmid_lookup_result.json.data | map(attribute='name') | list }}"
+  tags: [provision]
+
 - name: Set resolved VMID fact
+  vars:
+    _matched: "{{ vmid_lookup_result.json.data | selectattr('name', 'equalto', vm_name) | list }}"
   ansible.builtin.set_fact:
     resolved_vmid: >-
       {{ vm_id if vm_id | int > 0 else
-         (vmid_lookup_result.json.data | selectattr('name', 'equalto', vm_name) | map(attribute='vmid') | first) }}
+         (_matched | first).vmid if _matched | length > 0 else
+         (clone_result.vmid | default('')) }}
+  failed_when: resolved_vmid | default('') | length == 0
   tags: [provision]
 
 # ---------------------------------------------------------------
