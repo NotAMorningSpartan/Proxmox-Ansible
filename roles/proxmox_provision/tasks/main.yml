@@ -47,12 +47,13 @@
 # ---------------------------------------------------------------
 - name: Look up VMID for '{{ vm_name }}'
   ansible.builtin.shell: >-
-    set -o pipefail &&
     pvesh get /cluster/resources --type vm --output-format json
     | python3 -c "import sys,json;
     vms = json.load(sys.stdin);
     matches = [v for v in vms if v.get('name') == '{{ vm_name }}'];
     print(matches[0]['vmid'] if matches else '')"
+  args:
+    executable: /bin/bash
   delegate_to: "{{ proxmox_api_host }}"
   register: vmid_lookup
   changed_when: false
