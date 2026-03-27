@@ -16,23 +16,26 @@ Cloud-init handles items that must exist at first boot (static IP, hostname, use
 ## Prerequisites
 
 1. **Proxmox VE** with an API token created for Ansible (Datacenter > Permissions > API Tokens)
-2. **RHEL cloud image** template on Proxmox — import the qcow2, attach a cloud-init drive, convert to template
-3. **Ansible control node** with:
-   - `ansible-core` 2.14+
-   - `community.general` collection
-   - `proxmoxer` and `requests` Python libraries
+2. **RHEL cloud image** template on Proxmox (see [Creating the Proxmox Template](#creating-the-proxmox-template) below)
+3. **Ansible control node** (see [Install Control Node Dependencies](#install-control-node-dependencies) below)
 4. **Network connectivity** from the control node to both Proxmox and the new VM's IP range
 5. **Red Hat credentials** — username/password or org ID + activation key
 6. **IdM server** reachable from the VM's network (if IdM enrollment is desired)
 
-### Install Dependencies
+### Install Control Node Dependencies
 
-Using a Python virtual environment is recommended to avoid conflicts with system packages:
+A Python virtual environment is **required** to avoid conflicts with system packages. The playbooks depend on several Python libraries (`proxmoxer`, `requests`, `netaddr`) and Ansible collections (`community.general`, `ansible.utils`) that may not be available system-wide.
 
 ```bash
+# Create and activate the virtual environment
 python3 -m venv ~/ansible-venv
 source ~/ansible-venv/bin/activate
+
+# Install Python dependencies
 pip install ansible proxmoxer requests netaddr
+
+# Install required Ansible collections
+ansible-galaxy collection install community.general community.proxmox ansible.utils
 ```
 
 Add the activation to your shell profile so it's always available:
@@ -41,11 +44,127 @@ Add the activation to your shell profile so it's always available:
 echo 'source ~/ansible-venv/bin/activate' >> ~/.bashrc
 ```
 
-Then install the required Ansible collection:
+> **Note:** The `community.proxmox` collection is the new home for Proxmox modules (migrated from `community.general`). Both are installed for compatibility.
+
+### Creating the Proxmox Template
+
+The playbooks clone VMs from a Proxmox template that has cloud-init pre-configured. The easiest approach is to use the official Red Hat KVM guest image.
+
+#### Step 1: Download the RHEL Cloud Image
+
+Download the KVM guest image from the Red Hat Customer Portal:
+**Product Downloads > Red Hat Enterprise Linux > 10.x > KVM Guest Image** (`rhel-10.x-x86_64-kvm.qcow2`)
+
+#### Step 2: Upload to Proxmox
+
+Transfer the image to your Proxmox host:
 
 ```bash
-ansible-galaxy collection install community.general ansible.utils
+scp rhel-10.1-x86_64-kvm.qcow2 root@your-proxmox-host:/var/lib/vz/template/qemu/
 ```
+
+Or download directly on Proxmox (grab the authenticated URL from the Red Hat portal — it's tokenized and expires quickly):
+
+```bash
+mkdir -p /var/lib/vz/template/qemu
+cd /var/lib/vz/template/qemu
+wget "<paste-authenticated-url-here>"
+```
+
+You can also upload via the Proxmox web UI under **local storage > ISO Images** — it accepts any file type. The file will land in `/var/lib/vz/template/iso/`; adjust the import path accordingly.
+
+#### Step 3: Create and Configure the Template
+
+On the Proxmox host:
+
+```bash
+# Create the VM (use a high VMID like 9000 for templates)
+qm create 9000 --name rhel10-cloudinit-template --memory 2048 --cores 2 \
+  --net0 virtio,bridge=vmbr0 --scsihw virtio-scsi-single
+
+# Import the cloud image as the boot disk
+qm set 9000 --scsi0 local-lvm:0,import-from=/var/lib/vz/template/qemu/rhel-10.1-x86_64-kvm.qcow2
+
+# Add a cloud-init CD-ROM drive
+qm set 9000 --ide2 local-lvm:cloudinit
+
+# Set boot order to the imported disk
+qm set 9000 --boot order=scsi0
+
+# Set CPU type to 'host' (prevents kernel panics with cloud images)
+qm set 9000 --cpu host
+
+# Enable the QEMU guest agent
+qm set 9000 --agent enabled=1
+
+# Add serial console for web console access
+qm set 9000 --serial0 socket --vga serial0
+
+# Convert to template (prevents accidental boot)
+qm template 9000
+```
+
+> **Important:** The `--cpu host` flag is critical. Cloud images often kernel panic with the default `kvm64` CPU type because they're compiled for modern instruction sets.
+
+Replace `local-lvm` with your storage pool name (e.g., `hdd-pool`) if different.
+
+After the import, you can delete the source qcow2 file — the disk data is now in your Proxmox storage:
+
+```bash
+rm /var/lib/vz/template/qemu/rhel-10.1-x86_64-kvm.qcow2
+```
+
+Verify the template looks correct:
+
+```bash
+qm config 9000
+# Should show: scsi0 with the imported disk, ide2 with cloudinit,
+# boot: order=scsi0, cpu: host, agent: enabled=1
+```
+
+#### Using a Standard RHEL ISO Instead
+
+If you prefer to install from an ISO instead of the cloud image (more work, but full control):
+
+```bash
+# Boot the VM, install RHEL manually (minimal), then inside the guest:
+dnf install cloud-init qemu-guest-agent
+systemctl enable cloud-init cloud-init-local cloud-config cloud-final
+systemctl enable qemu-guest-agent
+
+# Clean up for templating
+cloud-init clean
+truncate -s 0 /etc/machine-id
+rm -f /etc/ssh/ssh_host_*
+dnf clean all
+poweroff
+
+# Then on the Proxmox host:
+qm set 9000 --cpu host --agent enabled=1
+qm template 9000
+```
+
+### Enabling Cloud-Init Snippets (for SSH Password Auth)
+
+By default, Proxmox's built-in cloud-init parameters (`ciuser`/`cipassword`) create the user and set a password but **do not enable SSH password authentication**. The playbooks can upload a custom cloud-init user-data snippet that enables `ssh_pwauth: true`.
+
+To use this feature, set `ci_use_custom_userdata: true` in your VM vars file. This requires "snippets" content type enabled on your Proxmox storage:
+
+```bash
+# On the Proxmox host — enable snippets on local storage
+pvesm set local --content iso,vztmpl,snippets,backup
+
+# Ensure the snippets directory exists
+mkdir -p /var/lib/vz/snippets
+```
+
+Then in your VM vars file:
+
+```yaml
+ci_use_custom_userdata: true
+```
+
+Without this, only SSH key authentication will work for initial login. Set `admin_ssh_pubkey` in your vars file to your public key (`cat ~/.ssh/id_ed25519.pub`).
 
 ## Quick Start
 
@@ -387,6 +506,10 @@ Create a `requirements.yml` to pin dependency versions:
 collections:
   - name: community.general
     version: ">=9.0.0"
+  - name: community.proxmox
+    version: ">=1.0.0"
+  - name: ansible.utils
+    version: ">=2.0.0"
 ```
 
 Install with:
@@ -394,3 +517,18 @@ Install with:
 ```bash
 ansible-galaxy collection install -r requirements.yml
 ```
+
+## Troubleshooting
+
+| Problem | Cause | Fix |
+|---------|-------|-----|
+| `Failed to import proxmoxer` | Missing Python library | `pip install proxmoxer requests` (inside your venv) |
+| `ipaddr filter failed` / `netaddr` error | Missing Python library | `pip install netaddr` |
+| `ansible.utils.ipaddr` not found | Missing Ansible collection | `ansible-galaxy collection install ansible.utils` |
+| VM kernel panics on boot | Default `kvm64` CPU type | Set `--cpu host` on the template: `qm set 9000 --cpu host` |
+| VM boot loop "No bootable device" | Boot order not set | `qm set 9000 --boot order=scsi0` |
+| SSH "Permission denied" (password) | Password auth not enabled | Set `ci_use_custom_userdata: true` and enable snippets on storage |
+| SSH "Permission denied" (wrong user) | `ansible_user` not set | Ensure `admin_user` is defined in your vars file |
+| `proxmox_api_host` not defined | Placeholder values in inventory | Edit `inventory/group_vars/proxmox.yml` and `inventory/hosts.yml` with real values |
+| `pvesh: command not found` | SSH to Proxmox missing PATH | Fixed in role — uses API calls instead of CLI |
+| `-e vars/file.yml` doesn't load | Missing `@` prefix | Use `-e @vars/file.yml` (the `@` tells Ansible to load from file) |
